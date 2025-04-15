@@ -1,21 +1,26 @@
-package xfbbroker
+package server
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/spf13/viper"
+	"github.com/yiffyi/xfbbroker/data"
 	"github.com/yiffyi/xfbbroker/xfb"
+	"gorm.io/gorm"
 )
 
 type ApiServer struct {
-	cfg *Config
+	db              *data.DB
+	authCallbackUrl string
 }
 
-func (s *ApiServer) probeSignPay(user *User) (string, error) {
+func (s *ApiServer) probeSignPay(user *data.User) (string, error) {
 	payUrl, err := xfb.RechargeOnCard("10.0", user.OpenId, user.SessionId, user.YmUserId)
 	if err != nil {
 		return "", err
@@ -44,7 +49,7 @@ func (s *ApiServer) handleAuth(w http.ResponseWriter, r *http.Request) {
 	u, _ := url.Parse("https://auth.xiaofubao.com/auth/user/third/getCode")
 	{
 		q := u.Query()
-		q.Set("callBackUrl", s.cfg.AuthCallback)
+		q.Set("callBackUrl", s.authCallbackUrl)
 		u.RawQuery = q.Encode()
 	}
 
@@ -61,56 +66,21 @@ func (s *ApiServer) handleAuth(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		} else {
-			u, ok := s.cfg.GetUser(data["id"].(string))
-			if ok {
-				u.SessionId = sess
-				u.Failed = 0
-				w.WriteHeader(http.StatusOK)
+			u, err := s.db.SelectUserFromYmUserId(data["id"].(string))
+			if err == nil {
+				err = s.db.UpdateUserSessionId(u, sess)
+				// w.WriteHeader(http.StatusOK)
 			} else {
-				u = User{
-					Name:      data["userName"].(string),
-					OpenId:    data["thirdOpenid"].(string),
-					SessionId: sess,
-					YmUserId:  data["id"].(string),
-					// Threshold: 100,
-					Enabled: false,
-				}
-				w.WriteHeader(http.StatusCreated)
+				_, err = s.db.CreateUser(data["userName"].(string), data["thirdOpenid"].(string), sess, data["id"].(string))
+				// w.WriteHeader(http.StatusCreated)
 			}
-			s.cfg.SetUser(u.YmUserId, u)
-			s.cfg.Save()
-		}
-	}
-}
 
-func (s *ApiServer) handleConfig(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	if r.Method == http.MethodOptions {
-		return
-	}
-	q := r.URL.Query()
-	sess := q.Get("sessionId")
-	if len(sess) > 0 {
-		user := s.cfg.SelectUserFromSessionId(sess)
-		if user == nil {
-			http.Error(w, "user with sessionId="+sess+" not found", http.StatusNotFound)
-			return
-		}
-
-		switch r.Method {
-		case http.MethodGet:
-			body, err := json.MarshalIndent(user, "", "    ")
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
+			} else {
+				w.WriteHeader(http.StatusOK)
 			}
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			w.Write(body)
-			return
 		}
-	} else {
-		http.Error(w, "no sessionId provided", http.StatusBadRequest)
 	}
 }
 
@@ -122,9 +92,12 @@ func (s *ApiServer) handleSignpay(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	sess := q.Get("sessionId")
 	if len(sess) > 0 {
-		user := s.cfg.SelectUserFromSessionId(sess)
-		if user == nil {
-			http.Error(w, "user with sessionId="+sess+" not found", http.StatusNotFound)
+		user, err := s.db.SelectUserFromSessionId(sess)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		} else if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -154,16 +127,15 @@ func (s *ApiServer) handleGetCards(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	sess := q.Get("sessionId")
 	if len(sess) > 0 {
-		user := s.cfg.SelectUserFromSessionId(sess)
-		if user == nil {
-			http.Error(w, "user with sessionId="+sess+" not found", http.StatusNotFound)
+		user, err := s.db.SelectUserFromSessionId(sess)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		} else if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		if !user.Enabled {
-			http.Error(w, "user disabled", http.StatusForbidden)
-			return
-		}
 		// get card info, balance
 		s, newSessionId, err := xfb.GetUserDefaultLoginInfo(user.SessionId)
 		if err != nil {
@@ -217,9 +189,12 @@ type CodePayCreateResponse struct {
 }
 
 func (s *ApiServer) handleCodepayCreateHelper(sessionId string, w http.ResponseWriter, r *http.Request) {
-	user := s.cfg.SelectUserFromSessionId(sessionId)
-	if user == nil {
-		http.Error(w, "user with sessionId="+sessionId+" not found", http.StatusNotFound)
+	user, err := s.db.SelectUserFromSessionId(sessionId)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	} else if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -295,9 +270,12 @@ func (s *ApiServer) handleCodepayCreatePath(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *ApiServer) handleCodepayQueryHelper(sessionId string, w http.ResponseWriter, r *http.Request) {
-	user := s.cfg.SelectUserFromSessionId(sessionId)
-	if user == nil {
-		http.Error(w, "user with sessionId="+sessionId+" not found", http.StatusNotFound)
+	_, err := s.db.SelectUserFromSessionId(sessionId)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	} else if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -401,9 +379,12 @@ func (s *ApiServer) handleRecentTransactions(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	user := s.cfg.SelectUserFromSessionId(sessionId)
-	if user == nil {
-		http.Error(w, "user with sessionId="+sessionId+" not found", http.StatusNotFound)
+	user, err := s.db.SelectUserFromSessionId(sessionId)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	} else if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -445,16 +426,16 @@ func (s *ApiServer) handleRecentTransactionsPath(w http.ResponseWriter, r *http.
 	s.handleRecentTransactions(w, r)
 }
 
-func CreateApiServer(cfg *Config) *mux.Router {
+func CreateApiServer(db *data.DB) *mux.Router {
 	r := mux.NewRouter()
 	s := &ApiServer{
-		cfg: cfg,
+		db, viper.GetString("http.auth_callback"),
 	}
 
 	// For human operations:
 	r.HandleFunc("/_/xfb/auth", s.handleAuth).Methods(http.MethodGet, http.MethodOptions)
 	r.HandleFunc("/_/xfb/signpay", s.handleSignpay).Methods(http.MethodGet, http.MethodOptions)
-	r.HandleFunc("/_/config", s.handleConfig).Methods(http.MethodGet, http.MethodPut, http.MethodOptions)
+	// r.HandleFunc("/_/config", s.handleConfig).Methods(http.MethodGet, http.MethodPut, http.MethodOptions)
 
 	// For integrations:
 	r.HandleFunc("/api/v1/cards", s.handleGetCards).Methods(http.MethodGet, http.MethodOptions)
