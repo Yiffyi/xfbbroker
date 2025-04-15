@@ -27,7 +27,7 @@ func setupViper(searchPaths []string) {
 	viper.SetDefault("http.tls_cert", "cert.pem")
 	viper.SetDefault("http.tls_key", "key.pem")
 	viper.SetDefault("http.auth_endpoint", "http://localhost:8080/_/xfb/auth")
-	viper.SetDefault("http.auth_callback", "https://webapp.xiaofubao.com@localhost:8443/_/xfb/auth")
+	viper.SetDefault("http.auth_callback", "https://webapp.xiaofubao.com@localhost:8443/_/xfb/auth?platform=WECHAT_H5&schoolCode=20090820")
 
 	viper.SetDefault("db.dsn", "sqlite3://xfbbroker.db")
 }

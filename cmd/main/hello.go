@@ -18,7 +18,7 @@ func main() {
 	println(dbginfo.String())
 	slog.Warn("Program started")
 
-	err := misc.LoadConfig([]string{})
+	err := misc.LoadConfig([]string{"."})
 	if err != nil {
 		panic(err)
 	}
