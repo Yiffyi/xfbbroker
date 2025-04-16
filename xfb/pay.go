@@ -137,6 +137,7 @@ func QuerySignApplyById(applyId string) (int, error) {
 	if s == 4 {
 		return s, errors.New("sign application failed")
 	}
+
 	// s == 1 still applying
 	return s, fmt.Errorf("unknown status: %d", s)
 }

@@ -22,13 +22,9 @@ type QrPayCode struct {
 }
 
 func GenerateQrPayCode(sessionId string) (*QrPayCode, error) {
-	form := url.Values{
-		"platform":   []string{"WECHAT_H5"},
-		"schoolCode": []string{"20090820"}}
-
 	var result XfbResponse
 
-	_, err := PostForm(XfbWebApp+qrCodeEndpointUrl, sessionId, form, &result)
+	_, err := Post(XfbWebApp+qrCodeEndpointUrl, sessionId, nil, &result)
 	if err != nil {
 		return nil, err
 	}
