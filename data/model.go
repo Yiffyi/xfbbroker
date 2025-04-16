@@ -59,6 +59,10 @@ func (db *DB) SelectUsersForTransCheck(batchSize int) ([]User, error) {
 		return nil, err
 	}
 
+	if len(users) == 0 {
+		return nil, nil
+	}
+
 	err = db.Model(&users).Update("last_trans_checked_at", time.Now()).Error
 	return users, err
 }
@@ -72,6 +76,7 @@ func (db *DB) CreateUser(name, openId, sessionId, ymUserId string) (*User, error
 		LastTransSerial:    0,
 		AutoTopupThreshold: 100,
 		EnableAutoTopup:    false,
+		EnableTransNotify:  false,
 	}
 	err := db.Create(&u).Error
 	return &u, err
@@ -105,6 +110,6 @@ type NotificationChannel struct {
 
 func (db *DB) SelectNotificationChannelForUser(userId uint) ([]NotificationChannel, error) {
 	var cs []NotificationChannel
-	err := db.Where("UserID = ?", userId).Find(&cs).Error
+	err := db.Where("user_id = ?", userId).Find(&cs).Error
 	return cs, err
 }

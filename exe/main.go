@@ -14,6 +14,9 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
+	misc.SetupLogger()
+
 	var rootCmd = &cobra.Command{
 		Use:   "xfbbroker",
 		Short: "xfbbroker is a CLI application",
@@ -24,6 +27,7 @@ func main() {
 	}
 
 	rootCmd.AddCommand(cmd.SetupServeCommand())
+	rootCmd.AddCommand(cmd.SetupDBCommand())
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
