@@ -5,9 +5,15 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/yiffyi/xfbbroker/cmd"
+	"github.com/yiffyi/xfbbroker/misc"
 )
 
 func main() {
+	err := misc.LoadConfig([]string{"."})
+	if err != nil {
+		panic(err)
+	}
 	var rootCmd = &cobra.Command{
 		Use:   "xfbbroker",
 		Short: "xfbbroker is a CLI application",
@@ -16,6 +22,8 @@ func main() {
 			fmt.Println("Welcome to xfbbroker!")
 		},
 	}
+
+	rootCmd.AddCommand(cmd.SetupServeCommand())
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
