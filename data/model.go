@@ -113,3 +113,15 @@ func (db *DB) SelectNotificationChannelForUser(userId uint) ([]NotificationChann
 	err := db.Where("user_id = ?", userId).Find(&cs).Error
 	return cs, err
 }
+
+func (db *DB) CreateNotificationChannel(userId uint, name, channelType, params string, enabled bool) (*NotificationChannel, error) {
+	c := NotificationChannel{
+		UserID:      userId,
+		Name:        name,
+		Enabled:     enabled,
+		ChannelType: channelType,
+		Params:      params,
+	}
+	err := db.Create(&c).Error
+	return &c, err
+}
