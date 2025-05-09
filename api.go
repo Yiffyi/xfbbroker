@@ -61,11 +61,10 @@ func (s *ApiServer) handleAuth(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		} else {
-			u, ok := s.cfg.GetUser(data["id"].(string))
-			if ok {
+			u, exist := s.cfg.GetUser(data["id"].(string))
+			if exist {
 				u.SessionId = sess
 				u.Failed = 0
-				w.WriteHeader(http.StatusOK)
 			} else {
 				u = User{
 					Name:      data["userName"].(string),
@@ -75,10 +74,22 @@ func (s *ApiServer) handleAuth(w http.ResponseWriter, r *http.Request) {
 					// Threshold: 100,
 					Enabled: false,
 				}
-				w.WriteHeader(http.StatusCreated)
 			}
 			s.cfg.SetUser(u.YmUserId, u)
 			s.cfg.Save()
+
+			body, err := json.MarshalIndent(u, "", "    ")
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			if exist {
+				w.WriteHeader(http.StatusOK)
+			} else {
+				w.WriteHeader(http.StatusCreated)
+			}
+			w.Write(body)
 		}
 	}
 }
